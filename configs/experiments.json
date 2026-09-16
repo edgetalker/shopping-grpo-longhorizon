@@ -27,7 +27,10 @@
       "soft_length_threshold": 20,
       "length_penalty_per_step": 0.01,
       "max_length_penalty": 0.15,
-      "max_environment_steps": 35
+      "max_environment_steps": 35,
+      "total_training_steps": 500,
+      "save_freq": 50,
+      "test_freq": 50
     }
   },
   "experiments": {
@@ -37,6 +40,10 @@
     "sft_target_attention_only": {"stage": "sft", "overrides": {"target_modules": "attention_only"}},
     "grpo_baseline": {"stage": "grpo", "overrides": {}},
     "grpo_trace": {"stage": "grpo", "overrides": {"trace_enabled": true}},
+    "grpo_trace_failure_only_v1": {
+      "stage": "grpo",
+      "overrides": {"trace_enabled": true}
+    },
     "grpo_rollout_2": {"stage": "grpo", "overrides": {"rollout_number": 2}},
     "grpo_clip_higher": {"stage": "grpo", "overrides": {"clip_mode": "clip_higher"}},
     "grpo_kl_on": {"stage": "grpo", "overrides": {"kl_enabled": true, "kl_coefficient": 0.01}},

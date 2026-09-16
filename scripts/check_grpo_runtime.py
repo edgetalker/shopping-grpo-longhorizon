@@ -29,6 +29,7 @@ CURRENT_RUNTIME_FILES = {
     "observation.py": "environments/ShopSimulator/shop_env/web_agent_site/engine/observation.py",
     "pack_api.py": "environments/ShopSimulator/shop_env/shop_env/pack_api.py",
     "reward.py": "environments/ShopSimulator/shop_env/web_agent_site/engine/reward.py",
+    "shop_agent.py": "environments/ShopSimulator/shop_env/shop_env/shop_agent.py",
     "slot_lease_pool.py": "environments/ShopSimulator/shop_env/shop_env/slot_lease_pool.py",
     "web_agent_text_env.py": "environments/ShopSimulator/shop_env/web_agent_site/envs/web_agent_text_env.py",
 }
@@ -252,6 +253,17 @@ def validate_trace(config):
         return
     if str(config["algorithm"]["adv_estimator"]).lower() != "grpo":
         raise SystemExit("shopping TRACE only supports GRPO")
+    if str(trace.get("gate", "")) != "exact_tie_failure_only":
+        raise SystemExit("shopping TRACE requires gate=exact_tie_failure_only")
+    if os.environ.get("SHOPPING_TRACE_FAILURE_ONLY", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }:
+        raise SystemExit(
+            "shopping TRACE requires SHOPPING_TRACE_FAILURE_ONLY=true so dynamic "
+            "sampling retains exact-tie failure groups"
+        )
     model = config["actor_rollout_ref"]["model"]
     lora_rank = int(model.get("lora", {}).get("rank", 0) or model.get("lora_rank", 0))
     if lora_rank <= 0:
@@ -264,6 +276,7 @@ def validate_trace(config):
         "terminal_weight": float(trace.get("terminal_weight", -1)),
         "outcome_weight": float(trace.get("outcome_weight", -1)),
         "turn_weight": float(trace.get("turn_weight", -1)),
+        "turn_credit_clip": float(trace.get("turn_credit_clip", -1)),
     }
     if not all(math.isfinite(value) for value in values.values()):
         raise SystemExit("shopping TRACE hyperparameters must be finite")
@@ -273,6 +286,8 @@ def validate_trace(config):
         raise SystemExit("shopping TRACE discount must be in [0, 1]")
     if min(values["terminal_weight"], values["outcome_weight"], values["turn_weight"]) < 0:
         raise SystemExit("shopping TRACE weights must be non-negative")
+    if values["turn_credit_clip"] <= 0:
+        raise SystemExit("shopping TRACE turn_credit_clip must be positive")
     if int(trace.get("max_sequence_length", 0)) != MAX_SAFE_SEQUENCE_LENGTH:
         raise SystemExit(
             f"shopping TRACE max_sequence_length must equal {MAX_SAFE_SEQUENCE_LENGTH}"

@@ -9,12 +9,24 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.train_grpo import build_command, parse_args
+from scripts.train_grpo import (
+    _validated_http_url,
+    build_command,
+    main as train_grpo_main,
+    parse_args,
+)
 from shopping_grpo.cli import main as cli_main
 from shopping_grpo.smoke import run_cpu_smoke
 
 
 class PublicEntrypointTest(unittest.TestCase):
+    def test_grpo_launcher_rejects_markdown_link_as_environment_url(self):
+        with self.assertRaisesRegex(SystemExit, "plain http"):
+            _validated_http_url(
+                "[http://127.0.0.1:5700](http://127.0.0.1:5700)",
+                "environment URL",
+            )
+
     def test_cpu_smoke_covers_public_contracts(self):
         result = run_cpu_smoke()
 
@@ -94,6 +106,46 @@ class PublicEntrypointTest(unittest.TestCase):
             str(output.resolve() / "training_diagnostics.jsonl"),
         )
         self.assertIn("trainer.logger=[console]", command)
+
+    def test_grpo_launcher_passes_hydra_overrides_to_preflight_and_trainer(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            model = temporary / "model"
+            model.mkdir()
+            (model / "config.json").write_text("{}", encoding="utf-8")
+            (model / "model.safetensors").write_bytes(b"example")
+            train = temporary / "train.parquet"
+            train.write_bytes(b"example")
+            validation = temporary / "validation.parquet"
+            validation.write_bytes(b"example")
+            output = temporary / "output"
+            argv = [
+                "train_grpo.py",
+                "--model",
+                str(model),
+                "--train-data",
+                str(train),
+                "--val-data",
+                str(validation),
+                "--output",
+                str(output),
+                "--config",
+                str(root / "configs/grpo.yaml"),
+                "--",
+                "trainer.total_training_steps=5",
+            ]
+            with patch.object(sys, "argv", argv), patch(
+                "scripts.train_grpo.subprocess.call",
+                side_effect=[0, 0],
+            ) as calls, patch("builtins.print"):
+                with self.assertRaises(SystemExit) as exit_status:
+                    train_grpo_main()
+
+        self.assertEqual(exit_status.exception.code, 0)
+        self.assertEqual(calls.call_count, 2)
+        for call in calls.call_args_list:
+            self.assertIn("trainer.total_training_steps=5", call.args[0])
 
 
 if __name__ == "__main__":

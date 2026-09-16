@@ -81,6 +81,12 @@ class ExperimentConfigTest(unittest.TestCase):
 
         self.assertIn("shopping_trace.enable=false", baseline)
         self.assertIn("shopping_trace.enable=true", treatment)
+        _, treatment_environment, _ = build_experiment(
+            resolve_experiment(registry, "grpo_trace"), root=ROOT
+        )
+        self.assertEqual(
+            treatment_environment["SHOPPING_TRACE_FAILURE_ONLY"], "true"
+        )
 
     def test_external_json_can_add_an_experiment_without_code_changes(self):
         source = json.loads((ROOT / "configs/experiments.json").read_text(encoding="utf-8"))

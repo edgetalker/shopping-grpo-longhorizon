@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "configs/grpo.yaml"
@@ -46,6 +47,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="resume from the latest checkpoint in the non-empty output directory",
+    )
+    parser.add_argument(
         "hydra_overrides",
         nargs=argparse.REMAINDER,
         help="additional veRL Hydra overrides after --",
@@ -60,6 +66,36 @@ def _validated_path(path: Path, description: str) -> Path:
     return resolved
 
 
+def _validated_http_url(value: str, description: str) -> str:
+    value = str(value).strip()
+    parsed = urlparse(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or any(character in value for character in "[]()")
+    ):
+        raise SystemExit(
+            f"{description} must be a plain http(s) URL, not Markdown: {value!r}"
+        )
+    return value.rstrip("/")
+
+
+def _hydra_overrides(args: argparse.Namespace) -> list[str]:
+    logger_override = (
+        "trainer.logger=[console,swanlab]"
+        if args.logger == "swanlab"
+        else "trainer.logger=[console]"
+    )
+    extra = list(args.hydra_overrides)
+    if extra[:1] == ["--"]:
+        extra = extra[1:]
+    return [
+        logger_override,
+        f"trainer.experiment_name={args.experiment_name}",
+        *extra,
+    ]
+
+
 def build_command(args: argparse.Namespace) -> tuple[list[str], dict[str, str]]:
     model = _validated_path(args.model, "model directory")
     if not model.is_dir() or not (model / "config.json").is_file():
@@ -72,12 +108,15 @@ def build_command(args: argparse.Namespace) -> tuple[list[str], dict[str, str]]:
     train_data = _validated_path(args.train_data, "train parquet")
     val_data = _validated_path(args.val_data, "validation parquet")
     config = _validated_path(args.config, "GRPO example config")
+    env_url = _validated_http_url(args.env_url, "environment URL")
     output = args.output.expanduser().resolve()
     if output.exists():
         if not output.is_dir():
             raise SystemExit(f"output must be a directory: {output}")
-        if any(output.iterdir()):
+        if any(output.iterdir()) and not args.resume:
             raise SystemExit(f"output directory must be new or empty: {output}")
+    elif args.resume:
+        raise SystemExit(f"cannot resume because output directory does not exist: {output}")
     if args.logger == "swanlab" and not os.environ.get("SWANLAB_API_KEY"):
         raise SystemExit("--logger swanlab requires SWANLAB_API_KEY")
 
@@ -95,7 +134,7 @@ def build_command(args: argparse.Namespace) -> tuple[list[str], dict[str, str]]:
             "SHOPPING_GRPO_DIAGNOSTICS_PATH": str(
                 output / "training_diagnostics.jsonl"
             ),
-            "SHOPSIM_BASE_URL": str(args.env_url),
+            "SHOPSIM_BASE_URL": env_url,
             "SHOPPING_AGENT_LOOP_CONFIG": str(DEFAULT_AGENT_CONFIG),
             "SHOPPING_TOOL_CONFIG": str(DEFAULT_TOOL_CONFIG),
             "GRPO_CONFIG_NAME": config.stem,
@@ -108,18 +147,10 @@ def build_command(args: argparse.Namespace) -> tuple[list[str], dict[str, str]]:
                 "SWANLAB_LOG_DIR": str(output / "swanlab"),
             }
         )
-    logger_override = (
-        "trainer.logger=[console,swanlab]"
-        if args.logger == "swanlab"
-        else "trainer.logger=[console]"
+    overrides = _hydra_overrides(args)
+    overrides.append(
+        "trainer.resume_mode=auto" if args.resume else "trainer.resume_mode=disable"
     )
-    overrides = [
-        logger_override,
-        f"trainer.experiment_name={args.experiment_name}",
-    ]
-    extra = list(args.hydra_overrides)
-    if extra[:1] == ["--"]:
-        extra = extra[1:]
     command = [
         sys.executable,
         "-m",
@@ -127,7 +158,6 @@ def build_command(args: argparse.Namespace) -> tuple[list[str], dict[str, str]]:
         f"--config-path={config.parent}",
         f"--config-name={config.stem}",
         *overrides,
-        *extra,
     ]
     return command, environment
 
@@ -149,11 +179,11 @@ def main() -> None:
     if args.dry_run:
         return
     Path(environment["GRPO_OUTPUT_DIR"]).mkdir(parents=True, exist_ok=True)
+    overrides = _hydra_overrides(args)
     preflight = [
         sys.executable,
         str(ROOT / "scripts/check_grpo_runtime.py"),
         *overrides,
-        *extra,
     ]
     preflight_status = subprocess.call(preflight, cwd=ROOT, env=environment)
     if preflight_status:

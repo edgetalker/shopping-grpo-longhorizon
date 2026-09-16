@@ -101,6 +101,9 @@ def _validate_settings(stage: str, settings: dict) -> None:
         "ppo_micro_batch_size",
         "soft_length_threshold",
         "max_environment_steps",
+        "total_training_steps",
+        "save_freq",
+        "test_freq",
     )
     if not settings["dynamic_sampling"]:
         raise ValueError("dynamic_sampling is fixed on for this repository")
@@ -127,6 +130,7 @@ def build_experiment(
     model: str | Path | None = None,
     train_data: Path | None = None,
     validation_data: Path | None = None,
+    resume: bool = False,
 ) -> tuple[list[str], dict[str, str], Path]:
     root = Path(root).resolve()
     output_root = Path(output_root)
@@ -174,6 +178,9 @@ def build_experiment(
             "SHOPPING_SOFT_LENGTH_THRESHOLD": str(settings["soft_length_threshold"]),
             "SHOPPING_LENGTH_PENALTY_PER_STEP": str(settings["length_penalty_per_step"]),
             "SHOPPING_MAX_LENGTH_PENALTY": str(settings["max_length_penalty"]),
+            "SHOPPING_TRACE_FAILURE_ONLY": str(
+                bool(settings["trace_enabled"])
+            ).lower(),
         }
     )
     command = [
@@ -184,6 +191,7 @@ def build_experiment(
         "--val-data", str(validation_data or root / "data/grpo/validation.parquet"),
         "--output", str(output),
         "--experiment-name", experiment["name"],
+        *(["--resume"] if resume else []),
         "--",
         f"actor_rollout_ref.actor.optim.lr={settings['learning_rate']}",
         f"actor_rollout_ref.rollout.n={settings['rollout_number']}",
@@ -195,6 +203,9 @@ def build_experiment(
         f"actor_rollout_ref.actor.use_kl_loss={str(bool(settings['kl_enabled'])).lower()}",
         f"actor_rollout_ref.actor.kl_loss_coef={settings['kl_coefficient']}",
         f"shopping_trace.enable={str(bool(settings['trace_enabled'])).lower()}",
+        f"trainer.total_training_steps={settings['total_training_steps']}",
+        f"trainer.save_freq={settings['save_freq']}",
+        f"trainer.test_freq={settings['test_freq']}",
     ]
     return command, environment, output
 
@@ -209,6 +220,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validation-data", type=Path)
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
 
 
@@ -223,11 +235,12 @@ def main() -> None:
         model=args.model,
         train_data=args.train_data,
         validation_data=args.validation_data,
+        resume=args.resume,
     )
     print(json.dumps({"experiment": experiment, "command": command, "output": str(output)}, indent=2))
     if args.dry_run:
         return
-    if output.exists() and any(output.iterdir()):
+    if not args.resume and output.exists() and any(output.iterdir()):
         raise SystemExit(f"experiment output directory must be new or empty: {output}")
     raise SystemExit(subprocess.call(command, cwd=ROOT, env=environment))
 
