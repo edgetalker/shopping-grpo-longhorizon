@@ -2,6 +2,7 @@ import gym
 import json
 import os
 import random
+import re
 import time
 import numpy as np
 
@@ -64,6 +65,11 @@ PROMPT_TEMPLATE_zh="""你正在进行一次网上购物模拟，目标是从商�
 Thought: 简要说明你在当前状态下的思考过程和操作依据。
 Action: 用规定格式输出你选择的操作。
 """
+
+
+def _normalize_click_target(value):
+    """Match the whitespace-normalized targets exposed by Observation v2."""
+    return re.sub(r"\s+", " ", str(value or "")).strip().casefold()
 
 PROMPT_TEMPLATE_zh_persona="""你正在进行一次网上购物模拟，目标是从商品库中选购最符合需求的商品。
 我会提供他们的目标商品（例如“一双鞋”）以及个人文档（例如偏好、预算、使用场景等）请注意，商品库中存在大量同类商品，你必须通过合理操作，，综合分析用户需求和当前页面信息，最终购买到最符合用户要求的商品。
@@ -181,7 +187,7 @@ class WebAgentTextEnv(gym.Env):
             # 更具体的异常处理，避免捕获所有异常
             action_name, action_arg = "", ""
         if action_arg is not None:
-            action_arg = action_arg.lower()
+            action_arg = _normalize_click_target(action_arg)
         if action_name == 'finish':
             status = self.server.finish_without_purchase(self.session)
         elif (action_name == 'search' and
@@ -238,12 +244,19 @@ class WebAgentTextEnv(gym.Env):
         buying_options = html_obj.select('input[type="radio"]')
 
         self.text_to_clickable = {
-            f'{b.get_text()}'.lower(): b
+            _normalize_click_target(b.get_text()): b
             for b in buttons + product_links
         }
         for opt in buying_options:
             opt_value = opt.get('value')
-            self.text_to_clickable[f'{opt_value}'] = opt
+            self.text_to_clickable[_normalize_click_target(opt_value)] = opt
+        # A purchase whose variant price cannot be resolved cannot receive a
+        # valid budget reward. Keep Buy Now out of the public action set so
+        # the policy must finish the required options or choose another item.
+        session = self.server.user_sessions.get(self.session, {})
+        price_resolution = session.get("price_resolution") or {}
+        if price_resolution.get("status") != "pass":
+            self.text_to_clickable.pop(_normalize_click_target(END_BUTTON), None)
         return dict(
             has_search_bar=has_search_bar,
             clickables=list(self.text_to_clickable.keys()),
@@ -614,7 +627,11 @@ class SimServer:
             session["asins"].add(session["asin"])
         elif clickable.get('name') is not None:
             clickable_key = clickable['name'].lower()
-            session["options"][clickable_key] = clickable_name
+            # Use the normalized value only for lookup; preserve the catalog's
+            # original option value in session and reward evidence.
+            session["options"][clickable_key] = clickable.get(
+                'value', clickable_name
+            )
             session["actions"]["options"] += 1
 
         # Set fields + url of page, then render page's HTML

@@ -137,5 +137,7 @@ def _render_product(state):
         + json.dumps(state.get("selected_options") or {}, ensure_ascii=False, sort_keys=True),
         "available_options: "
         + json.dumps(state.get("available_options") or {}, ensure_ascii=False, sort_keys=True),
+        f"purchase_ready: {bool(state.get('purchase_ready'))}",
+        f"price_resolution_method: {_text(state.get('price_resolution_method'))}",
     ]
     return lines

@@ -172,6 +172,30 @@ def _handle_interact_action(
     return return_info
 
 
+def _handle_terminate_action(
+    env: Any,
+    env_idx: int,
+    reason: str,
+) -> Dict[str, Any]:
+    """Ask ShopSimulator to produce an authoritative fixed Reward v3 terminal."""
+    status = env.server.terminate_session(env.session, reason)
+    return {
+        "done": True,
+        "reward": status["reward"],
+        "instruction": f"Environment terminated: {reason}",
+        "message": "Environment terminated",
+        "env_idx": env_idx,
+        "idx": env.session,
+        "reward_detail": status["reward_detail"],
+        "purchase": {},
+        "goal": {},
+        "over": True,
+        "observation_state": None,
+        "termination_reason": status["termination_reason"],
+        "reward_valid": status["reward_valid"],
+    }
+
+
 def shop_agent(
     env: Any,
     env_idx: int,
@@ -211,5 +235,13 @@ def shop_agent(
             raise ValueError("interact action requires response parameter")
         return _handle_interact_action(env, env_idx, response)
 
+    elif action == "terminate":
+        if response not in {"repeat_loop", "max_steps"}:
+            raise ValueError("terminate action requires repeat_loop or max_steps")
+        return _handle_terminate_action(env, env_idx, response)
+
     else:
-        raise ValueError(f"Unknown action type: {action}, supported actions: 'reset', 'interact'")
+        raise ValueError(
+            f"Unknown action type: {action}, supported actions: "
+            "'reset', 'interact', 'terminate'"
+        )

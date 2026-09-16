@@ -54,6 +54,25 @@ class FakeEnv:
     def release(self):
         self.released = True
 
+    def terminate(self, reason):
+        reward = -0.5 if reason == "max_steps" else -0.65
+        return {
+            "done": True,
+            "over": True,
+            "reward": reward,
+            "termination_reason": reason,
+            "reward_valid": True,
+            "reward_detail": {
+                "reward_version": "shopsimulator-reward-v3",
+                "reward_type": reason,
+                "reward_valid": True,
+                "termination_reason": reason,
+                "terminal_utility": reward,
+                "purchase_success": False,
+                "sampling_invalid": False,
+            },
+        }
+
 
 class FailingEnv(FakeEnv):
     def step(self, action):
@@ -588,7 +607,8 @@ class RolloutTest(unittest.TestCase):
             max_steps=2,
         )
 
-        self.assertEqual(traj["status"], "max_steps")
+        self.assertEqual(traj["status"], "done")
+        self.assertEqual(traj["terminal_result"]["termination_reason"], "max_steps")
         self.assertEqual(len(traj["steps"]), 2)
         self.assertEqual(env.actions, ["search[乳胶枕0]", "search[第二次观察后搜索]"])
         self.assertEqual(len(traj["messages"][2]["tool_calls"]), 1)

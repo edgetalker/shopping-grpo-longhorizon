@@ -380,13 +380,16 @@ def evaluate_purchase(
     hard_failed = any(
         gate["status"] == FAIL for gate in hard_gates.values()
     )
-    if hard_unverifiable:
-        reward_type = "reward_unverifiable"
-        reward_valid = False
-        reward = values[reward_type]
-    elif hard_failed:
+    # A proven hard-gate failure is sufficient to reject the purchase even
+    # when another hard gate cannot be verified.  Treating unverifiability as
+    # higher priority would discard useful negative policy examples.
+    if hard_failed:
         reward_type = "wrong_purchase"
         reward_valid = True
+        reward = values[reward_type]
+    elif hard_unverifiable:
+        reward_type = "reward_unverifiable"
+        reward_valid = False
         reward = values[reward_type]
     elif preferences["all_satisfied"]:
         reward_type = (

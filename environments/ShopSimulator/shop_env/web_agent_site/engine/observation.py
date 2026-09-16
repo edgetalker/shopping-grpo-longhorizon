@@ -90,6 +90,11 @@ def build_observation_state(
             str(key): _compact_list(values, limit=100)
             for key, values in (product.get("options") or {}).items()
         }
+        price_resolution = session.get("price_resolution") or {}
+        state["purchase_ready"] = price_resolution.get("status") == "pass"
+        state["price_resolution_method"] = str(
+            price_resolution.get("method") or "not_resolved"
+        )
         if session.get("selected_price") is not None:
             state["selected_price"] = session["selected_price"]
         if page_type == "information_subpage":

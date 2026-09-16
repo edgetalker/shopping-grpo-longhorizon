@@ -78,6 +78,24 @@ class ShopAgentEnv:
         self.done = bool(result.get("done", False))
         return result
 
+    def terminate(self, reason):
+        """Request an environment-authored fixed Reward v3 terminal result."""
+        if reason not in {"repeat_loop", "max_steps"}:
+            raise ValueError("unsupported fixed termination reason")
+        if self.done:
+            raise ShopEnvironmentStateError("Environment is already done; release it before reset")
+        result = self._call(
+            {
+                "action": "terminate",
+                "env_idx": self._leased_env_idx(),
+                "response": reason,
+            }
+        )
+        if result.get("done") is not True:
+            raise ShopProtocolError("terminate response is not terminal")
+        self.done = True
+        return result
+
     def release(self):
         """释放当前租约；重复 release 是安全的空操作。"""
         if self.env_idx is None:

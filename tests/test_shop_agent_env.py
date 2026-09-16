@@ -22,8 +22,38 @@ class ShopAgentEnvTest(unittest.TestCase):
         self.assertTrue(hasattr(shop_http_env, "ShopAgentEnv"))
 
     def test_structured_api_environment_exposes_lifecycle_methods(self):
-        for name in ("reset", "step", "release"):
+        for name in ("reset", "step", "terminate", "release"):
             self.assertTrue(hasattr(shop_http_env.ShopAgentEnv, name))
+
+    def test_fixed_termination_uses_structured_api(self):
+        transport = FakeTransport(
+            [
+                {"result": {"instruction": "找乳胶枕", "env_idx": 7, "idx": 0}},
+                {
+                    "result": {
+                        "done": True,
+                        "over": True,
+                        "reward": -0.65,
+                        "termination_reason": "repeat_loop",
+                    }
+                },
+            ]
+        )
+        env = shop_http_env.ShopAgentEnv(transport=transport)
+        env.reset(0)
+
+        result = env.terminate("repeat_loop")
+
+        self.assertTrue(result["done"])
+        self.assertTrue(env.done)
+        self.assertEqual(
+            transport.calls[1][1],
+            {
+                "action": "terminate",
+                "env_idx": 7,
+                "response": "repeat_loop",
+            },
+        )
 
     def test_transport_can_be_injected_for_api_tests(self):
         parameters = inspect.signature(shop_http_env.ShopAgentEnv).parameters

@@ -3,6 +3,7 @@ import unittest
 from web_agent_site.engine.comparators import (
     FAIL,
     PASS,
+    UNVERIFIABLE,
     compare_brand,
     compare_core_functions,
     compare_model,
@@ -240,6 +241,16 @@ class RewardV3Test(unittest.TestCase):
         )
         self.assertEqual(result.reward_type, "reward_unverifiable")
         self.assertTrue(result.to_dict()["sampling_invalid"])
+
+    def test_proven_category_failure_precedes_unverifiable_price(self):
+        candidate = product()
+        candidate["category"] = "数码›电脑›笔记本电脑"
+        result = evaluate_purchase(candidate, goal(), selected_options={})
+        self.assertEqual(result.hard_gates["category"]["status"], FAIL)
+        self.assertEqual(result.hard_gates["budget"]["status"], UNVERIFIABLE)
+        self.assertEqual(result.reward_type, "wrong_purchase")
+        self.assertTrue(result.reward_valid)
+        self.assertFalse(result.to_dict()["sampling_invalid"])
 
     def test_candidate_eligibility_uses_score_and_coverage(self):
         result = evaluate_candidate_eligibility(product(), goal())

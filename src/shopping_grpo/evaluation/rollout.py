@@ -271,6 +271,25 @@ def completed_task_attempts(path):
     return done
 
 
+def _fixed_termination(trajectory, env, reason):
+    """Record an environment-authored Reward v3 terminal for a policy stop."""
+    try:
+        result = env.terminate(reason)
+    except Exception as exc:
+        trajectory["status"] = "error"
+        trajectory["error"] = {
+            "type": exc.__class__.__name__,
+            "message": str(exc),
+            "traceback": traceback.format_exc(),
+        }
+        return trajectory
+    trajectory["status"] = "done"
+    trajectory["terminal_result"] = result
+    trajectory["final_reward"] = float(result["reward"])
+    trajectory["done"] = True
+    return trajectory
+
+
 def collect_for_task(
     task,
     client,
@@ -376,12 +395,10 @@ def collect_for_task(
                 messages.append(assistant)
                 messages.append(action_guard_tool_message(tool_call, reason, latest_observation))
                 if consecutive_blocked_calls >= MAX_BLOCKED_TOOL_CALLS:
-                    trajectory["status"] = "invalid_action_limit"
-                    break
+                    return _fixed_termination(trajectory, env, "repeat_loop")
                 continue
             if len(trajectory["steps"]) >= int(max_steps):
-                trajectory["status"] = "max_steps"
-                return trajectory
+                return _fixed_termination(trajectory, env, "max_steps")
             messages.append(assistant)
             # 只有通过当前 observation 守卫的调用才会触碰环境并消耗一个执行步骤。
             step = _execute_tool_call(env, tool_call, len(trajectory["steps"]))
@@ -411,7 +428,7 @@ def collect_for_task(
                 trajectory["done"] = True
                 return trajectory
         else:
-            trajectory["status"] = "max_steps"
+            return _fixed_termination(trajectory, env, "max_steps")
         if trajectory["steps"]:
             trajectory["final_reward"] = trajectory["steps"][-1]["reward"]
     except ToolExecutionError as exc:
@@ -422,6 +439,8 @@ def collect_for_task(
             "message": str(exc.original),
             "traceback": "".join(traceback.format_exception(exc.original)),
         }
+    except ContextBudgetError:
+        return _fixed_termination(trajectory, env, "max_steps")
     except Exception as exc:
         trajectory["status"] = "error"
         trajectory["error"] = {
