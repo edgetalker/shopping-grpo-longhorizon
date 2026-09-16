@@ -21,3 +21,9 @@ models/
 swanlog/
 wandb/
 logs/
+
+# Local delivery handoff and transfer bundles
+/PROJECT_MEMORY.md
+/trace-failure-only-v1.tar.gz
+/trace-position-id-hotfix.tar.gz
+/trace-temperature-hotfix.tar.gz
