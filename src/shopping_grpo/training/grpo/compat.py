@@ -12,6 +12,10 @@ def _install_trace_actor_update():
         apply_trace_advantages,
         build_trace_score_batch,
     )
+    from shopping_grpo.training.grpo.dynamic_sampling import (
+        extract_shopping_group_signals,
+        trace_eligible_trajectory_indices,
+    )
 
     original_update_actor = RayPPOTrainer._update_actor
 
@@ -24,8 +28,41 @@ def _install_trace_actor_update():
         if not self.ref_in_actor:
             raise RuntimeError("shopping TRACE requires LoRA so the frozen base model is available")
 
+        if "shopping" not in batch.non_tensor_batch or "uid" not in batch.non_tensor_batch:
+            raise RuntimeError("shopping TRACE requires shopping diagnostics and uid groups")
+        terminal_utilities, purchase_success, sampling_invalid, _ = (
+            extract_shopping_group_signals(
+                batch.non_tensor_batch["shopping"].tolist()
+            )
+        )
+        uids = batch.non_tensor_batch["uid"].tolist()
+        gated_indices, gate_stats = trace_eligible_trajectory_indices(
+            uids,
+            terminal_utilities,
+            purchase_success,
+            sampling_invalid,
+            tolerance=float(
+                self.config.get("shopping_dynamic_sampling", {}).get(
+                    "reward_tolerance", 1.0e-8
+                )
+            ),
+        )
+        if not gated_indices:
+            batch.non_tensor_batch.pop("trace_target", None)
+            output = original_update_actor(self, batch)
+            output.meta_info["metrics"].update(
+                {
+                    "trace/eligible_groups": 0.0,
+                    "trace/eligible_trajectories": 0.0,
+                }
+            )
+            return output
+
+        trace_batch = batch.select_idxs(gated_indices)
+        trace_uids = [uids[index] for index in gated_indices]
+
         score_batch, state_counts = build_trace_score_batch(
-            batch,
+            trace_batch,
             self.tokenizer,
             max_sequence_length=int(config["max_sequence_length"]),
         )
@@ -34,19 +71,27 @@ def _install_trace_actor_update():
         mean_log_probs = (
             reference.batch["ref_log_prob"] * target_mask
         ).sum(dim=-1) / target_mask.sum(dim=-1)
-        batch.non_tensor_batch.pop("trace_target", None)
         trace_metrics = apply_trace_advantages(
-            batch,
+            trace_batch,
             mean_log_probs,
             state_counts,
+            uids=trace_uids,
             epsilon=float(config["epsilon"]),
             horizon=int(config["horizon"]),
             discount=float(config["discount"]),
             terminal_weight=float(config["terminal_weight"]),
             outcome_weight=float(config["outcome_weight"]),
             turn_weight=float(config["turn_weight"]),
+            turn_credit_clip=float(config["turn_credit_clip"]),
         )
+        batch.batch["advantages"][gated_indices] = trace_batch.batch["advantages"]
+        batch.batch["returns"][gated_indices] = trace_batch.batch["returns"]
+        batch.non_tensor_batch.pop("trace_target", None)
         trace_metrics["trace/target_log_prob_mean"] = float(mean_log_probs.mean())
+        trace_metrics["trace/eligible_groups"] = float(
+            gate_stats["trace_eligible_group_count"]
+        )
+        trace_metrics["trace/eligible_trajectories"] = float(len(gated_indices))
         output = original_update_actor(self, batch)
         output.meta_info["metrics"].update(trace_metrics)
         return output

@@ -5,9 +5,11 @@ from __future__ import annotations
 import math
 import asyncio
 import unittest
+from unittest.mock import patch
 
 from shopping_grpo.training.grpo.trace import (
     canonical_purchase_target,
+    center_and_clip_turn_rewards,
     mixed_token_advantages,
     trace_turn_layout,
     turn_rewards,
@@ -17,24 +19,38 @@ from scripts.check_grpo_runtime import validate_trace
 
 
 class TraceCreditTest(unittest.TestCase):
+    def test_turn_credit_is_centered_per_uid_and_clipped(self):
+        centered = center_and_clip_turn_rewards(
+            [[2.0, 0.0], [-2.0], [3.0]],
+            ["a", "a", "b"],
+            clip=1.0,
+        )
+        self.assertEqual(centered, [[1.0, 0.0], [-1.0], [0.0]])
+        self.assertLessEqual(
+            max(abs(value) for row in centered for value in row), 1.0
+        )
+
     def test_trace_preflight_requires_the_frozen_lora_base(self):
         config = {
             "shopping_trace": {
                 "enable": True,
+                "gate": "exact_tie_failure_only",
                 "epsilon": 0.1,
                 "horizon": 3,
                 "discount": 0.8,
                 "terminal_weight": 2.0,
                 "outcome_weight": 1.0,
                 "turn_weight": 0.2,
+                "turn_credit_clip": 1.0,
                 "max_sequence_length": 24576,
             },
             "algorithm": {"adv_estimator": "grpo"},
             "actor_rollout_ref": {"model": {"lora_rank": 0}},
             "trainer": {"n_gpus_per_node": 1, "nnodes": 1},
         }
-        with self.assertRaisesRegex(SystemExit, "LoRA"):
-            validate_trace(config)
+        with patch.dict("os.environ", {"SHOPPING_TRACE_FAILURE_ONLY": "true"}):
+            with self.assertRaisesRegex(SystemExit, "LoRA"):
+                validate_trace(config)
 
     def test_session_keeps_gold_target_out_of_agent_observation(self):
         class FakeEnv:

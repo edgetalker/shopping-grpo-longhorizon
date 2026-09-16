@@ -137,11 +137,47 @@ def mixed_token_advantages(
     return result
 
 
+def center_and_clip_turn_rewards(
+    rewards_by_row: Sequence[Sequence[float]],
+    uids: Sequence[object],
+    *,
+    clip: float,
+) -> list[list[float]]:
+    """Center TRACE credit within each rollout group and bound every turn."""
+    if len(rewards_by_row) != len(uids):
+        raise ValueError("TRACE rewards and uids must have equal length")
+    if not math.isfinite(float(clip)) or float(clip) <= 0:
+        raise ValueError("TRACE turn credit clip must be finite and positive")
+    grouped: dict[object, list[float]] = {}
+    for uid, rewards in zip(uids, rewards_by_row, strict=True):
+        try:
+            hash(uid)
+        except TypeError as exc:
+            raise ValueError("TRACE uid must be hashable") from exc
+        values = [float(value) for value in rewards]
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("TRACE turn rewards must be finite")
+        grouped.setdefault(uid, []).extend(values)
+    means = {
+        uid: sum(values) / len(values)
+        for uid, values in grouped.items()
+        if values
+    }
+    bound = float(clip)
+    centered = []
+    for uid, rewards in zip(uids, rewards_by_row, strict=True):
+        group_mean = means.get(uid, 0.0)
+        centered.append(
+            [max(-bound, min(bound, float(value) - group_mean)) for value in rewards]
+        )
+    return centered
+
+
 def build_trace_score_batch(batch, tokenizer, *, max_sequence_length: int):
     """Pack all rollout prefixes for one batched frozen-reference forward pass."""
     import torch
     from verl import DataProto
-    from verl.utils.torch_functional import compute_position_id_with_mask
+    from verl.utils.model import compute_position_id_with_mask
 
     responses = batch.batch["responses"]
     response_length = responses.shape[1]
@@ -213,6 +249,11 @@ def build_trace_score_batch(batch, tokenizer, *, max_sequence_length: int):
             "response_mask": tensor(target_masks),
         }
     )
+    # veRL 0.8 requires temperature in the DataProto metadata for every
+    # compute_log_prob call.  TRACE scores raw frozen-reference likelihoods,
+    # matching the offline audit, so use unit temperature rather than the
+    # rollout sampler's temperature.
+    score_batch.meta_info["temperature"] = 1.0
     return score_batch, state_counts
 
 
@@ -220,6 +261,8 @@ def apply_trace_advantages(
     batch,
     flat_mean_target_log_probs,
     state_counts: Sequence[int],
+    *,
+    uids: Sequence[object],
     **parameters: float | int,
 ) -> dict[str, float]:
     """Replace outcome-only GRPO advantages with TRACE mixed advantages."""
@@ -229,8 +272,8 @@ def apply_trace_advantages(
         raise ValueError("TRACE scorer output count does not match rollout states")
     response_length = batch.batch["responses"].shape[1]
     response_attention = batch.batch["attention_mask"][:, -response_length:]
-    mixed_rows = []
-    all_rewards = []
+    row_metadata = []
+    raw_rewards_by_row = []
     offset = 0
     for row, state_count in enumerate(state_counts):
         mask = batch.batch["response_mask"][row]
@@ -247,23 +290,33 @@ def apply_trace_advantages(
             discount=float(parameters["discount"]),
             terminal_weight=float(parameters["terminal_weight"]),
         )
-        all_rewards.extend(rewards)
-        mixed_rows.append(
-            mixed_token_advantages(
-                outcome_advantage=outcome,
-                response_mask=mask.tolist(),
-                response_attention=response_attention[row].tolist(),
-                mean_target_log_probs=scores,
-                epsilon=float(parameters["epsilon"]),
-                horizon=int(parameters["horizon"]),
-                discount=float(parameters["discount"]),
-                terminal_weight=float(parameters["terminal_weight"]),
-                outcome_weight=float(parameters["outcome_weight"]),
-                turn_weight=float(parameters["turn_weight"]),
-            )
-        )
+        raw_rewards_by_row.append(rewards)
+        row_metadata.append((outcome, mask.tolist(), layout))
         if len(layout) != state_count - 1:
             raise ValueError("TRACE layout changed while applying advantages")
+    centered_by_row = center_and_clip_turn_rewards(
+        raw_rewards_by_row,
+        uids,
+        clip=float(parameters["turn_credit_clip"]),
+    )
+    mixed_rows = []
+    all_rewards = []
+    for (outcome, mask, layout), centered in zip(
+        row_metadata, centered_by_row, strict=True
+    ):
+        row = [
+            float(parameters["outcome_weight"]) * outcome
+            if mask[index] and response_attention[len(mixed_rows), index]
+            else 0.0
+            for index in range(len(mask))
+        ]
+        for ((start, end), _), reward in zip(layout, centered, strict=True):
+            row[start:end] = [
+                float(parameters["outcome_weight"]) * outcome
+                + float(parameters["turn_weight"]) * reward
+            ] * (end - start)
+        mixed_rows.append(row)
+        all_rewards.extend(centered)
     mixed = torch.tensor(
         mixed_rows,
         dtype=batch.batch["advantages"].dtype,
@@ -279,4 +332,5 @@ def apply_trace_advantages(
         "trace/positive_turn_ratio": float(
             sum(reward > 0 for reward in all_rewards) / len(all_rewards)
         ),
+        "trace/turn_reward_abs_max": float(max(abs(value) for value in all_rewards)),
     }

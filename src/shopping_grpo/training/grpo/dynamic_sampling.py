@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from collections.abc import Hashable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -237,12 +238,16 @@ def select_reward_varying_groups(
     sampling_invalid: Sequence[bool] | None = None,
     sampling_invalid_reasons: Sequence[Sequence[str]] | None = None,
     tolerance: float = 1.0e-8,
+    retain_constant_failures: bool | None = None,
 ) -> tuple[list[int], dict[str, Any]]:
-    """Return trajectory indices belonging to groups with non-constant reward.
+    """Return trajectory indices accepted by the bounded group selector.
 
     Group order follows the first occurrence of each uid. Returned trajectory
     indices preserve their original order, so callers can safely apply the same
-    selection to every aligned tensor and non-tensor batch field.
+    selection to every aligned tensor and non-tensor batch field.  The optional
+    TRACE arm additionally retains exact-tie groups only when every trajectory
+    is a valid non-purchase-success.  The environment switch lets the pinned
+    veRL patch call this helper without embedding experiment logic in veRL.
     """
 
     if len(uids) != len(seq_rewards):
@@ -260,6 +265,11 @@ def select_reward_varying_groups(
             raise ValueError(f"{name} must have the same length as uids")
     if tolerance < 0 or not math.isfinite(tolerance):
         raise ValueError(f"tolerance must be a finite non-negative number, got {tolerance!r}")
+    if retain_constant_failures is None:
+        retain_constant_failures = (
+            os.environ.get("SHOPPING_TRACE_FAILURE_ONLY", "").strip().lower()
+            in {"1", "true", "yes"}
+        )
 
     utility_values = (
         terminal_utilities if terminal_utilities is not None else seq_rewards
@@ -336,10 +346,16 @@ def select_reward_varying_groups(
         utility_max = max(utilities)
         utility_varying = utility_max - utility_min > tolerance
         has_sampling_invalid = any(group["sampling_invalid"])
+        trace_eligible = bool(
+            retain_constant_failures
+            and not utility_varying
+            and not has_sampling_invalid
+            and not any(group["purchase_success"])
+        )
         reasons = tuple(sorted(set(group["sampling_invalid_reasons"])))
         if has_sampling_invalid:
             drop_reason = "sampling_invalid"
-        elif not utility_varying:
+        elif not utility_varying and not trace_eligible:
             drop_reason = "constant_reward"
         else:
             drop_reason = None
@@ -358,6 +374,7 @@ def select_reward_varying_groups(
                 "utility_min": utility_min,
                 "utility_max": utility_max,
                 "reward_varying": utility_varying,
+                "trace_eligible": trace_eligible,
                 "sampling_invalid": has_sampling_invalid,
                 "sampling_invalid_reasons": reasons,
                 "drop_reason": drop_reason,
@@ -391,6 +408,9 @@ def select_reward_varying_groups(
         "sampling_invalid_group_count": sum(
             group["sampling_invalid"] for group in groups
         ),
+        "trace_eligible_group_count": sum(
+            group["trace_eligible"] for group in groups
+        ),
         "sampling_invalid_reason_counts": {
             reason: sum(
                 reason in group["sampling_invalid_reasons"] for group in groups
@@ -410,3 +430,31 @@ def select_reward_varying_groups(
         "groups": tuple(groups),
     }
     return trajectory_indices, stats
+
+
+def trace_eligible_trajectory_indices(
+    uids: Sequence[Hashable],
+    terminal_utilities: Sequence[float],
+    purchase_success: Sequence[bool],
+    sampling_invalid: Sequence[bool],
+    *,
+    tolerance: float = 1.0e-8,
+) -> tuple[list[int], dict[str, Any]]:
+    """Return only rows in valid exact-tie failure groups."""
+    _, stats = select_reward_varying_groups(
+        uids,
+        terminal_utilities,
+        terminal_utilities=terminal_utilities,
+        purchase_success=purchase_success,
+        sampling_invalid=sampling_invalid,
+        sampling_invalid_reasons=[()] * len(uids),
+        tolerance=tolerance,
+        retain_constant_failures=True,
+    )
+    eligible_uids = {
+        group["uid"] for group in stats["groups"] if group["trace_eligible"]
+    }
+    return (
+        [index for index, uid in enumerate(uids) if uid in eligible_uids],
+        stats,
+    )

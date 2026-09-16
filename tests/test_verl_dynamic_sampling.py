@@ -11,6 +11,7 @@ from shopping_grpo.training.grpo.dynamic_sampling import (
     build_rollout_diagnostics,
     extract_shopping_group_signals,
     select_reward_varying_groups,
+    trace_eligible_trajectory_indices,
 )
 
 
@@ -63,6 +64,42 @@ class RewardGroupSelectionTest(unittest.TestCase):
         self.assertEqual(indices, [])
         self.assertEqual(stats["kept_group_count"], 0)
         self.assertEqual(stats["all_purchase_success_group_count"], 1)
+
+    def test_failure_only_trace_retains_constant_failure(self):
+        indices, stats = select_reward_varying_groups(
+            ["a"] * 4,
+            [-0.85] * 4,
+            terminal_utilities=[-0.85] * 4,
+            purchase_success=[False] * 4,
+            sampling_invalid=[False] * 4,
+            retain_constant_failures=True,
+        )
+        self.assertEqual(indices, [0, 1, 2, 3])
+        self.assertTrue(stats["groups"][0]["trace_eligible"])
+        self.assertEqual(stats["trace_eligible_group_count"], 1)
+
+    def test_failure_only_trace_excludes_constant_purchase_success(self):
+        indices, stats = select_reward_varying_groups(
+            ["a"] * 4,
+            [0.55] * 4,
+            terminal_utilities=[0.55] * 4,
+            purchase_success=[True] * 4,
+            sampling_invalid=[False] * 4,
+            retain_constant_failures=True,
+        )
+        self.assertEqual(indices, [])
+        self.assertFalse(stats["groups"][0]["trace_eligible"])
+
+    def test_trace_indices_exclude_varying_and_invalid_groups(self):
+        uids = ["constant"] * 4 + ["varying"] * 4 + ["invalid"] * 4
+        utilities = [-0.85] * 4 + [-0.85, -0.5, -0.85, -0.5] + [-0.5] * 4
+        success = [False] * 12
+        invalid = [False] * 8 + [True, False, False, False]
+        indices, stats = trace_eligible_trajectory_indices(
+            uids, utilities, success, invalid
+        )
+        self.assertEqual(indices, [0, 1, 2, 3])
+        self.assertEqual(stats["trace_eligible_group_count"], 1)
 
     def test_fractional_reward_variance_is_kept(self):
         rewards = [2 / 7, 4 / 7, 2 / 7, 2 / 7]
