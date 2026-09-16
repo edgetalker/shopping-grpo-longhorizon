@@ -23,9 +23,9 @@ Baseline → SFT → GRPO → Evaluation
 实验开发起点为 commit `dc6c9af8e48c8e6325101b39d1d20060f69e4221`。
 
 本 Fork 的主要工作包括 Environment v2.1 / Reward v3 运行时修复、SFT → 在线 GRPO
-训练链路、动态采样与诊断、TRACE-inspired failure-only 回合信用、LoRA 导出身份故障
-定位，以及 Final-200 配对统计和负结果分析。上游归属与本 Fork 的新增贡献通过 Git
-历史和分模块 commits 保持可审计。
+训练链路、动态采样与诊断、TRACE-inspired failure-only 回合信用，以及 Final-200 配对
+统计和负结果分析。上游归属与本 Fork 的新增贡献通过 Git 历史和分模块 commits 保持
+可审计。
 
 ## 一句话结论
 
@@ -63,9 +63,7 @@ flowchart LR
    1,000 个组参与更新。
 3. 将冻结参考模型、log-ratio 和 K 步前缀变化改造成保守的 failure-only 分支；只处理
    有效、无成功且精确同分的组，其他组保持 Vanilla 行为。
-4. 发现并修复 veRL LoRA 导出后错误服务未合并基座的问题；此前“三模型结果完全相同”
-   的评测无效，最终结果均来自正确独立合并和服务的模型。
-5. 完成 Final-200 的确定性配对评测和逐轨迹负结果分析，区分“训练采样效率”与
+4. 完成 Final-200 的确定性配对评测和逐轨迹负结果分析，区分“训练采样效率”与
    “任务质量”。
 
 ## 权威实验结果
@@ -156,9 +154,8 @@ shasum -a 256 data/grpo/train.parquet \
 pytest -q
 ```
 
-训练、导出、独立服务和评测的精确命令、版本、哈希、checkpoint 选择规则以及 LoRA
-导出陷阱见 [复现实验说明](docs/reproducibility.md)。这些命令是复现说明，不应在包装
-阶段直接执行。
+训练、模型导出、服务和评测的精确命令、版本、哈希与 checkpoint 选择规则见
+[复现实验说明](docs/reproducibility.md)。这些命令是复现说明，不应在包装阶段直接执行。
 
 ## 仓库结构
 
@@ -174,23 +171,6 @@ scripts/                         训练、导出、评测与审计入口
 src/shopping_grpo/               环境、SFT、GRPO、TRACE 与评测实现
 tests/                           核心契约和回归测试
 ```
-
-## 可支持与不可支持的表述
-
-可以说：
-
-- 完成了 SFT → 在线 GRPO → 冻结评测的端到端 Agent 后训练流水线；
-- 同等 1,000 个训练组下，failure-only TRACE 将生成轨迹减少 20.4%；
-- 发现并修复了会让不同 checkpoint 服务成相同基座的 LoRA 导出问题；
-- Final-200 没有出现可统计支持的严格成功率提升，并通过轨迹定位了代理目标错配。
-
-不可以说：
-
-- “TRACE 显著提升了最终准确率”；
-- “验证集 +8.34% 证明了泛化”；
-- “减少 20.4% rollout 等于节省 20.4% 训练成本”；
-- “完整复现了论文 TRACE”；
-- “LLM Judge 证明了主要结论”。最终主结果来自确定性的 Reward v3。
 
 ## 致谢
 

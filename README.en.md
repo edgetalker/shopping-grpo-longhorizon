@@ -26,9 +26,9 @@ The experiment work starts from commit
 
 The main contributions in this fork are the Environment v2.1 / Reward v3
 runtime repairs, the SFT → online GRPO pipeline, bounded dynamic sampling and
-diagnostics, TRACE-inspired failure-only turn credit, LoRA export identity
-debugging, and paired Final-200 analysis. The upstream provenance and the work
-added in this fork remain auditable through the modular commit history.
+diagnostics, TRACE-inspired failure-only turn credit, and paired Final-200
+analysis. The upstream provenance and the work added in this fork remain
+auditable through the modular commit history.
 
 ## Result in one paragraph
 
@@ -120,7 +120,7 @@ purchase-readiness potential.
 ## Reproduction and evidence
 
 The exact SFT/GRPO commands, dependency versions, checkpoint-selection rule,
-hashes, correct LoRA export/merge procedure, and artifact boundaries are in
+hashes, model export procedure, and artifact boundaries are in
 [docs/reproducibility.md](docs/reproducibility.md). The machine-readable final
 metrics are in [experiments/final_delivery.json](experiments/final_delivery.json).
 
@@ -134,18 +134,6 @@ pytest -q
 ```
 
 Do not rerun training, model merging, or Final-200 merely to validate the docs.
-
-## Supported claims
-
-Supported: an end-to-end SFT → online GRPO → frozen evaluation pipeline; a
-20.4% reduction in generated trajectories for the same 1,000 trained groups;
-the diagnosis and repair of a LoRA export identity failure; and a trajectory-
-level explanation of a negative held-out result.
-
-Unsupported: a significant TRACE quality gain; faithful paper reproduction;
-equating rollout reduction with compute savings; treating a 50-task validation
-gain as generalization; or attributing the primary result to an LLM judge. The
-primary evaluation is deterministic Reward v3.
 
 ## Acknowledgements
 

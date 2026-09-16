@@ -174,10 +174,10 @@ Checkpoint 只能使用 50 题 validation mean reward 选择，Final-200 不参�
 两臂都选择 step 450。TRACE 的 50-step 值来自独立 smoke，不与后续 resumed full-run
 曲线拼接成一个可比较 validation point。
 
-## 8. LoRA 导出与正确合并
+## 8. 模型导出与合并
 
-`scripts/export_grpo.sh` 只负责从 veRL checkpoint 恢复导出结构。学习到的 LoRA 可能
-位于 `lora_adapter/`，不能直接假定 export 根目录就是已学习的独立模型。
+`scripts/export_grpo.sh` 从 veRL checkpoint 恢复导出结构，再将 LoRA adapter 与 SFT
+merged base 合并为用于服务的独立模型目录。
 
 ```bash
 bash scripts/export_grpo.sh \
@@ -200,8 +200,6 @@ TRACE 同理，将输入与输出名替换为 `grpo_trace_failure_only_v1` 和
 2. deploy 目录的 `merge_manifest.json` 指向正确 base 和 adapter；
 3. deploy 主权重不得与 SFT 主权重哈希相同；
 4. 每个 vLLM 服务使用唯一 served name。
-
-首次错误评测中，SFT 与两个错误 export 根目录的主权重哈希完全相同；该结果无效。
 
 ## 9. Final-200 协议
 

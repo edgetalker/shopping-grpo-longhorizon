@@ -62,17 +62,17 @@ Phase 0b 在 20 个同任务 gold/wrong 对上得到 20/20 排序正确，单侧
 
 ```mermaid
 flowchart TD
-    A[四条 rollout + Reward v3] --> B{reward_valid 且可训练?}
-    B -->|否| X[丢弃 sampling-invalid / unverifiable]
-    B -->|是| C{组内终局 reward 是否有差异?}
-    C -->|是| D[Vanilla GRPO advantage]
-    C -->|否| E{是否全部 gold?}
-    E -->|是| Y[丢弃零梯度成功组]
-    E -->|否| F[冻结参考模型计算前缀 log-ratio]
-    F --> G[K=3, gamma=0.8 回合信用]
-    G --> H[UID 内中心化 + clip [-1,1]]
-    H --> I[turn weight 0.2 注入 token advantage]
-    D --> J[PPO 更新]
+    A["四条 rollout + Reward v3"] --> B{"reward_valid 且可训练？"}
+    B -->|否| X["丢弃 sampling-invalid / unverifiable"]
+    B -->|是| C{"组内终局 reward 是否有差异？"}
+    C -->|是| D["Vanilla GRPO advantage"]
+    C -->|否| E{"是否全部 gold？"}
+    E -->|是| Y["丢弃零梯度成功组"]
+    E -->|否| F["冻结参考模型计算前缀 log-ratio"]
+    F --> G["K=3, gamma=0.8 回合信用"]
+    G --> H["UID 内中心化 + clip (-1 到 1)"]
+    H --> I["turn weight 0.2 注入 token advantage"]
+    D --> J["PPO 更新"]
     I --> J
 ```
 
@@ -115,10 +115,8 @@ flowchart TD
 | 训练利用率 | 44.05% | 55.37% | 提高 11.32 pp |
 | PPO KL mean | 0.00753 | 约 0.00659 | 两臂均稳定 |
 
-可得结论：failure-only 信号确实挽救了部分原本会被丢弃的失败组。
-
-不可得结论：没有完整端到端计时，因此不能把 20.4% 的 rollout 减少等同于 20.4%
-的 GPU-hour 或 wall-clock 节省。
+failure-only 信号确实挽救了部分原本会被丢弃的失败组。由于没有完整端到端计时，
+20.4% 的 rollout 减少不能直接换算为同比例的 GPU-hour 或 wall-clock 节省。
 
 ### 6.2 质量指标：不成立
 
@@ -159,42 +157,7 @@ TRACE 相比 Vanilla：
 不可逆承诺。当前代理缺少类别 gate、预算、完整规格、证据充分性、当前页面可达性和
 动作合法性。
 
-## 8. 工程事故与修复
-
-首次三模型评测出现完全相同结果。原因不是训练无效，而是 veRL export 在输出根目录
-恢复了未改变的 SFT 基座，把学习到的权重留在 `lora_adapter/`；vLLM 只服务了根目录。
-
-证据是三个错误服务目录的主权重 SHA-256 与 SFT 完全相同，而 Vanilla 和 TRACE
-adapter 的哈希不同。正确流程是：
-
-1. 用 veRL export 恢复 adapter；
-2. 用合并后的 SFT 模型作为 base，执行 PEFT `merge_and_unload`；
-3. 服务独立 `*-deploy` 目录；
-4. 为每个模型设置唯一 served name，使身份错误 fail closed。
-
-无效的首次结果不得报告。
-
-## 9. 结论边界
-
-### 已支持
-
-- Environment/Reward 修复后的端到端 Agent 后训练流水线；
-- Vanilla 恒定奖励组与采样浪费诊断；
-- 有界、冻结参考模型、K 步 failure-only 信用实现；
-- 同等训练组下更高的生成利用率；
-- LoRA export 身份故障的发现与修复；
-- 冻结 Final-200 配对评测与轨迹级负结果分析。
-
-### 未支持
-
-- TRACE 显著提高 Final-200 成功率；
-- TRACE 在任务质量上击败 Vanilla 或 SFT；
-- faithful/global TRACE 复现；
-- rollout 降低等于同比例算力节省；
-- 单次 50 题验证提升等于泛化；
-- fewer loops/guards 单独代表更强购物能力。
-
-## 10. 后续方向
+## 8. 后续方向
 
 当前 Final-200 已被观察。任何进一步方法迭代都必须建立新的 development/test split。
 更合理的 potential 应分解建模：

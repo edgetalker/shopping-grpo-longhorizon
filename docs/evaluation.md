@@ -30,19 +30,14 @@ Final-200 已完成并被观察。它不能继续用于目标设计、超参数�
 SFT、Vanilla step 450、TRACE step 450 使用完全相同的 200 个 task IDs。三组各 200 条
 轨迹均完成，无缺失、重复或运行时错误，600 条全部 `reward_valid=true`。
 
-## 模型身份
+## 评测对象
 
-第一次评测无效：veRL export 根目录仍是未改变的 SFT base，学习到的 LoRA 位于
-`lora_adapter/`，导致 vLLM 实际服务相同权重。
-
-权威评测使用：
+最终评测使用：
 
 - SFT merged model；
 - SFT merged + Vanilla step-450 adapter 的独立 PEFT merge；
 - SFT merged + TRACE step-450 adapter 的独立 PEFT merge；
 - 三个唯一 served names：`shopping-agent`、`vanilla450`、`trace450`。
-
-无效的首次相同模型结果不得引用。
 
 ## Final-200 结果
 

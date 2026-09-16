@@ -5,7 +5,7 @@ Start with the delivery documents:
 1. [Project compass](project-compass.md): problem, diagnosis, method, gates,
    final result, negative finding, and successor design.
 2. [Reproducibility](reproducibility.md): versions, hashes, exact commands,
-   checkpoint selection, LoRA export, and artifact availability.
+   checkpoint selection, model export, and artifact availability.
 3. [Final experiment comparison](../experiments/comparison.md): authoritative
    SFT/Vanilla/TRACE tables and paired statistics.
 
