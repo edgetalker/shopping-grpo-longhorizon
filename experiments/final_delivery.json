@@ -1,0 +1,189 @@
+{
+  "schema_version": "shopping-grpo-final-delivery-v1",
+  "verified_date": "2026-09-16",
+  "repository": {
+    "base_commit": "dc6c9af8e48c8e6325101b39d1d20060f69e4221",
+    "branch": "main",
+    "working_tree_clean_during_artifact_audit": false,
+    "note": "Metrics were audited against the dirty experiment worktree rooted at base_commit; delivery changes are recorded in later commits."
+  },
+  "contract": {
+    "workflow": ["baseline", "sft", "grpo", "evaluation"],
+    "environment": "shopsimulator-environment-v2.1",
+    "reward": "shopsimulator-reward-v3",
+    "observation": "shopping-observation-v2",
+    "tool_schema": "shopping-tool-schema-v2",
+    "strict_success": "complete gold_purchase with reward_valid=true"
+  },
+  "datasets": {
+    "grpo_train": {
+      "tasks": 1000,
+      "path": "data/grpo/train.parquet",
+      "sha256": "98bb1799a42916b6ca2a1a2618f11cfec60f428e99e6ada448a78361768206e5"
+    },
+    "grpo_validation": {
+      "tasks": 50,
+      "path": "data/grpo/validation.parquet",
+      "sha256": "8c9fbdd22bf6d191d1da6bcca9c1612e170bb928483c4ce0c8d0934f9ba69317"
+    },
+    "final200": {
+      "tasks": 200,
+      "path": "data/evaluation/tasks.jsonl",
+      "sha256": "d99112a20ef47534c27a32e4b38229bf048dcc6b06fef2e3e919aac3093662f5",
+      "observed": true,
+      "sft_overlap": 0,
+      "grpo_train_overlap": 0,
+      "grpo_validation_overlap": 0
+    },
+    "sft_grpo_train_overlap": {
+      "count": 6,
+      "rate": 0.006,
+      "task_ids": [7682, 8993, 11298, 12380, 14953, 17219]
+    }
+  },
+  "sft": {
+    "base_model": "Qwen3.5-2B",
+    "train_examples": 1069,
+    "validation_examples": 118,
+    "epochs": 1.0,
+    "learning_rate": 0.00005,
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "train_loss": 0.39833419803363174,
+    "runtime_seconds": 5428.0111,
+    "peak_gpu_memory_gib": 68.97,
+    "merged_weight_sha256": "fe0a6e374cdbe1b401afc826254f830e96fabbff33cf84087d847760bb267c85",
+    "adapter_sha256": "8885516ff96c9d91bd57f775e381157508d1fa4465a6c563e248031bac905aeb"
+  },
+  "grpo": {
+    "common": {
+      "optimizer_steps": 500,
+      "trained_groups": 1000,
+      "trained_trajectories": 4000,
+      "rollouts_per_prompt": 4,
+      "rollout_temperature": 0.7,
+      "rollout_top_p": 0.9,
+      "prompt_batch_size": 2,
+      "learning_rate": 0.000001,
+      "lora_rank": 16,
+      "lora_alpha": 32
+    },
+    "vanilla": {
+      "run_name": "grpo-vanilla-500-entropy-off-v1",
+      "selected_step": 450,
+      "selected_validation_mean_reward": 0.327932,
+      "generated_groups": 2270,
+      "generated_trajectories": 9080,
+      "generated_trained_group_ratio": 2.27,
+      "utilization": 0.4405,
+      "skipped_attempts": 56,
+      "constant_reward_groups": 1085,
+      "sampling_invalid_groups": 43
+    },
+    "trace": {
+      "run_name": "grpo_trace_failure_only_v1",
+      "method": "TRACE-inspired exact-tie failure-only turn credit for Shopping GRPO",
+      "selected_step": 450,
+      "selected_validation_mean_reward": 0.355292,
+      "generated_groups": 1806,
+      "generated_trajectories": 7224,
+      "generated_trained_group_ratio": 1.806,
+      "utilization": 0.5537,
+      "skipped_attempts": 17,
+      "trace_trained_groups": 224,
+      "trace_trajectories": 896
+    },
+    "trace_minus_vanilla_efficiency": {
+      "generated_trajectory_relative_change": -0.2044,
+      "skipped_attempt_relative_change": -0.6964,
+      "utilization_percentage_point_change": 11.32,
+      "compute_saving_measured": false
+    }
+  },
+  "final200_protocol": {
+    "rollouts_per_task": 1,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_steps": 35,
+    "context_window": 24576,
+    "context_compaction": false,
+    "completed_trajectories": 600,
+    "reward_valid_trajectories": 600
+  },
+  "final200": {
+    "sft": {
+      "strict_successes": 123,
+      "strict_success_rate": 0.615,
+      "mean_reward": 0.4658432091346154,
+      "mean_weighted_score": 0.7508988286019536,
+      "mean_steps": 8.115,
+      "guard_rejections": 24,
+      "gold": 123,
+      "partial_alternative": 44,
+      "wrong": 27,
+      "repeat": 4,
+      "max_steps": 2
+    },
+    "vanilla_step450": {
+      "strict_successes": 126,
+      "strict_success_rate": 0.63,
+      "mean_reward": 0.4906066363324176,
+      "mean_weighted_score": 0.7477035447191698,
+      "mean_steps": 7.54,
+      "guard_rejections": 61,
+      "gold": 126,
+      "partial_alternative": 41,
+      "wrong": 19,
+      "repeat": 13,
+      "max_steps": 1
+    },
+    "trace_step450": {
+      "strict_successes": 123,
+      "strict_success_rate": 0.615,
+      "mean_reward": 0.46411005513583636,
+      "mean_weighted_score": 0.7480790789072038,
+      "mean_steps": 7.95,
+      "guard_rejections": 32,
+      "gold": 123,
+      "partial_alternative": 44,
+      "wrong": 25,
+      "repeat": 7,
+      "max_steps": 1
+    }
+  },
+  "paired_statistics": {
+    "vanilla_minus_sft": {
+      "strict_success_delta_pp": 1.5,
+      "gains": 9,
+      "losses": 6,
+      "exact_mcnemar_p": 0.60723876953125,
+      "bootstrap_95ci_pp": [-2.5, 5.5]
+    },
+    "trace_minus_vanilla": {
+      "strict_success_delta_pp": -1.5,
+      "gains": 3,
+      "losses": 6,
+      "exact_mcnemar_p": 0.5078125,
+      "bootstrap_95ci_pp": [-4.5, 1.5],
+      "reward_delta": -0.0264965811965812,
+      "reward_delta_95ci": [-0.07216, 0.01494],
+      "weighted_score_delta": 0.000375534188034,
+      "mean_step_delta": 0.41,
+      "guard_rejection_delta_per_task": -0.145
+    },
+    "trace_minus_sft": {
+      "strict_success_delta_pp": 0.0,
+      "gains": 4,
+      "losses": 4,
+      "exact_mcnemar_p": 1.0
+    }
+  },
+  "evidence": {
+    "final_archive_sha256": "d4656fff687dc21fb0b56f0d8fea6cb834dad9b25d8792210185353aefeca125",
+    "final_archive_contains_adapters": false,
+    "local_selected_grpo_adapters_present": false,
+    "cloud_artifacts_reverified": false,
+    "cloud_status": "last-known server endpoint refused connection during packaging"
+  },
+  "primary_conclusion": "Failure-only TRACE improved generation utilization but did not produce a statistically supported held-out strict-success gain."
+}

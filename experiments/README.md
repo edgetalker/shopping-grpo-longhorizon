@@ -1,16 +1,16 @@
 # Experiments
 
-This directory contains the compact, reviewable artifacts behind the README
-result table. Large checkpoints and complete trajectories are intentionally not
-stored in Git.
+Authoritative delivery artifacts:
 
 ```text
-baseline/   base-model evaluation config and summary
-sft/        SFT training/evaluation config and summary
-grpo/       GRPO training/evaluation config and summary
-comparison.md
+final_delivery.json   machine-readable SFT/Vanilla/TRACE metrics and hashes
+comparison.md         human-readable final comparison and claim boundaries
 ```
 
-All reported models use the same 200 held-out tasks, Environment v2.1 and
-Reward v3. See [comparison.md](comparison.md) for interpretation and protocol
-limitations.
+The `baseline/`, `sft/`, and `grpo/` subdirectories contain the older
+Baseline/SFT/GRPO-step100 snapshot. They are retained as historical artifacts
+and must not be used as the final three-model comparison.
+
+Large checkpoints and complete trajectories are intentionally outside Git. See
+[reproducibility](../docs/reproducibility.md) for the verified archive hash,
+artifact inventory, and missing-backup warning.

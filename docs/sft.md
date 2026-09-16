@@ -1,88 +1,72 @@
 # LoRA SFT
 
-## Purpose
+## 目的
 
-The base model can speak naturally but does not reliably follow
-ShopSimulator's action protocol. Supervised fine-tuning teaches the basic
-policy: issue legal tool calls, use observations as evidence, select product
-variants and terminate.
+基础模型能够生成自然语言，但不能稳定遵守 ShopSimulator 的工具协议。SFT 负责建立
+后续 GRPO 所需的基础策略：合法工具调用、根据 observation 行动、选择完整 variant、
+检查价格并达到有效终局。
 
-## Inputs
+## 最终训练输入
 
-- Base model: `Qwen/Qwen3.5-2B`
-- Main data: `data/sft_pure_v4/all.jsonl` (1,192 rows)
-- Fixed curriculum manifest: `data/sft_curriculum/manifest.json`
-- Gradient rows: 1,073; development rows: 119; Final evaluation overlap: 0
-- Target: assistant tokens only; user and tool-observation tokens are masked
+| Item | Value |
+|---|---|
+| Base model | Qwen3.5-2B |
+| Dataset | `data/sft_pure_v4/all.jsonl` |
+| Curriculum selector | `data/sft_curriculum/manifest.json`, stage `c` |
+| Actual train / validation examples | 1,069 / 118 |
+| Final-200 task-ID overlap | 0 |
+| Loss mask | assistant action tokens only |
 
-The source and label hashes, exact task IDs, stage definitions, and review-only
-flags are frozen in the curriculum manifest. The older `data/sft/` split is
-kept only for reproducing the historical baseline.
+Curriculum manifest 中的原始 stage-c row 计数为 1,073/119；经过训练数据加载与有效性
+过滤后，`train_summary.json` 记录的实际样本数为 1,069/118。最终报告使用后者。
 
-## Run
+旧的 `data/sft/` 800/200 split 和 staged curriculum launcher 仅用于历史实验，不是最终
+SFT checkpoint 的训练来源。
 
-After `bash scripts/setup.sh`:
-
-```bash
-# Check all six train/merge commands without loading a model.
-bash scripts/sft_curriculum.sh --dry-run
-
-# Run A -> B -> C on the server.
-bash scripts/sft_curriculum.sh --swanlab
-```
-
-The launcher trains a LoRA adapter and then merges it with the base model:
-
-```text
-outputs/models/sft-curriculum/stage-a/{adapter,merged}/
-outputs/models/sft-curriculum/stage-b/{adapter,merged}/
-outputs/models/sft-curriculum/stage-c/{adapter,merged}/
-```
-
-Default recipe:
+## 最终配置
 
 | Setting | Value |
 |---|---|
-| Maximum sequence length | 24,576 |
-| Epochs | 1 per stage |
-| Per-device batch size | 1 |
+| Max sequence length | 24,576 |
+| Epochs | 1 |
+| Train / eval batch | 1 / 1 |
 | Gradient accumulation | 8 |
-| Learning rate | `1e-4` -> `7e-5` -> `5e-5` |
+| Learning rate | `5e-5` |
+| Warmup ratio | 0.03 |
 | LoRA rank / alpha / dropout | 16 / 32 / 0.05 |
+| Precision | bf16 |
+| Attention | SDPA |
 | Gradient checkpointing | enabled |
-| Attention implementation | SDPA |
-| Saved epoch checkpoints | 3 |
+| Seed | 42 |
 
-The long context is intentional: a training example includes the complete
-multi-turn interaction. Shortening it may truncate the terminal decision or the
-evidence that supports it.
+精确命令见 [reproducibility.md](reproducibility.md)。当前包装阶段不要重新执行训练或
+模型合并。
 
-Stage A learns the action protocol from 256 foundation rows. Stage B restarts a
-fresh LoRA on A's merged checkpoint and uses 799 cumulative constraint rows.
-Stage C does the same from B and uses all 1,073 training rows. Therefore simple
-skills receive three passes, constraint handling two, and long-horizon strategy
-one. Use `--start-stage b` after A is complete, or `--stop-after-stage b` for a
-bounded server run. A checkpoint interrupted inside a stage can be resumed
-with `--start-stage <stage> --resume-from-checkpoint <checkpoint-dir>`.
+## 结果
 
-## Evaluate
+| Metric | Value |
+|---|---:|
+| Train loss | 0.3983341980 |
+| Runtime | 5,428.0 s / 92.9 min |
+| Peak GPU memory | 68.97 GiB |
+| Final-200 strict success | 123/200 = 61.5% |
+| Final-200 mean Reward v3 | 0.465843 |
 
-```bash
-bash scripts/serve_model.sh outputs/models/sft-curriculum/stage-c/merged
-bash scripts/evaluate.sh sft
-```
+权威训练摘要：
+`outputs/models/sft-single-pass/adapter/train_summary.json`。
 
-Validation loss is a training-health signal, not the final model score. Select
-among stages using the 119-row development split and failure-type coverage.
-Run Final-200 Clean only after the recipe is frozen, so the final benchmark is
-not silently used for checkpoint selection.
+关键权重哈希：
 
-## Output contract
+- merged model：`fe0a6e374cdbe1b401afc826254f830e96fabbff33cf84087d847760bb267c85`；
+- adapter：`8885516ff96c9d91bd57f775e381157508d1fa4465a6c563e248031bac905aeb`。
 
-GRPO starts from the merged model, not directly from the adapter:
+## 输出契约
+
+GRPO 从合并后的 standalone model 开始，不直接把 SFT adapter 当 base：
 
 ```text
-GRPO_MODEL_PATH=outputs/models/sft-curriculum/stage-c/merged
+outputs/models/sft-single-pass/merged
 ```
 
-This boundary keeps the GRPO launcher independent of the SFT trainer process.
+SFT 是主要能力增益来源。Vanilla 与 TRACE 的最终比较必须使用新的 Final-200 结果，
+不能引用历史 `experiments/sft/summary.json` 的 60.5%。

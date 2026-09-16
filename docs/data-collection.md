@@ -1,5 +1,10 @@
 # Data collection
 
+> Historical collection record. The final delivered SFT checkpoint uses
+> `data/sft_pure_v4/all.jsonl` with curriculum stage `c` and 1,069/118 actual
+> train/validation examples. The 800/200 split below reproduces an earlier SFT
+> baseline and is not the source of the authoritative Final-200 SFT result.
+
 ## Goal
 
 The SFT stage needs complete examples of a shopping agent using tools correctly:

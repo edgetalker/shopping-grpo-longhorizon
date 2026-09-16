@@ -1,5 +1,10 @@
 # 评测集更新与轨迹审计记录
 
+> 本文件是历史 benchmark 的追加式记录。当前项目的权威 SFT/Vanilla/TRACE 结果、
+> 配对统计与产物边界见 [Final-200 冻结评测](evaluation.md) 和
+> [最终实验比较](../experiments/comparison.md)。本页的第三方模型成绩和 Final-183
+> 重算不属于当前三模型主结论。
+
 本文件是评测资产的追加式记录。每次更新都应记录日期、任务数和哈希、变更 task ID、
 证据、对历史结果的影响，以及是否重新运行了 rollout。完整原始轨迹是本地
 `outputs/evaluation/` 产物，不提交到 Git；这里保存可复核的汇总和 bad-case 结论。
