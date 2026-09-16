@@ -5,13 +5,13 @@
   "split_role": "blind_final_test",
   "task_sha256": "d99112a20ef47534c27a32e4b38229bf048dcc6b06fef2e3e919aac3093662f5",
   "task_count": 200,
-  "metadata_sha256": "fc62d0d9cb16bf9bcc68a689a6bf17236adc923acaa56ff136cf5fa7ecff4442",
+  "metadata_sha256": "e725b5654d4e88e7777935f7cecc729c047a6d449cfa59b5baaa70a2bccdb236",
   "required_metadata": {
     "asset": "shop_benchmark_reward_v3_final_200_clean",
     "contract": "environment-v2.1/reward-v3/curated-final200-clean-v1",
     "environment_version": "shopsimulator-environment-v2.1",
     "reward_version": "shopsimulator-reward-v3",
-    "evaluated": false
+    "evaluated": true
   },
   "task_ids_resource": "blind_final_task_ids.json"
 }

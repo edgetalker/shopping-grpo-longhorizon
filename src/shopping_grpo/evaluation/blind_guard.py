@@ -20,7 +20,7 @@ _EXPECTED_METADATA = {
     "contract": "environment-v2.1/reward-v3/curated-final200-clean-v1",
     "environment_version": "shopsimulator-environment-v2.1",
     "reward_version": "shopsimulator-reward-v3",
-    "evaluated": False,
+    "evaluated": True,
 }
 
 
