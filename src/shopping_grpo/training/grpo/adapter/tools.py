@@ -54,14 +54,14 @@ class ShopSimulatorTool(BaseTool):
         if state["done"] or state["terminate"]:
             return ToolResponse(text="Error: environment is already terminal; do not call another tool."), 0.0, {}
         if len(state["steps"]) >= state["max_steps"]:
-            _terminate(state, "max_steps")
+            await terminate_with_reward(state, "max_steps")
             return ToolResponse(text="Error: maximum executed tool steps reached."), 0.0, {"reason": "max_steps"}
         parameters = parameters if isinstance(parameters, dict) else {}
         # think 不触碰环境，只记录一次模型决策；其余工具必须经过动作守卫。
         if self.name == "think":
             step = _append_step(state, self.name, parameters)
             if len(state["steps"]) >= state["max_steps"]:
-                _terminate(state, "max_steps")
+                await terminate_with_reward(state, "max_steps")
                 return ToolResponse(text="Error: maximum executed tool steps reached."), 0.0, step
             return ToolResponse(text="Reasoning recorded. Continue with one environment tool call."), 0.0, step
         observation = state.get("latest_observation", "")
@@ -79,7 +79,7 @@ class ShopSimulatorTool(BaseTool):
             )
             state["consecutive_guard_rejections"] += 1
             if state["consecutive_guard_rejections"] >= 3:
-                _terminate(state, "too_many_guard_rejections")
+                await terminate_with_reward(state, "repeat_loop")
                 return ToolResponse(text="Error: maximum consecutive action guard rejections reached."), 0.0, {
                     "reason": reason
                 }
@@ -113,59 +113,13 @@ class ShopSimulatorTool(BaseTool):
             return ToolResponse(text=f"Error: ShopSimulator tool execution failed: {exc}"), 0.0, {"error": state["error"]}
         state["consecutive_guard_rejections"] = 0
         if step["done"]:
-            state["done"] = True
-            state["terminate"] = True
-            state["termination_reason"] = str(
-                result.get("termination_reason") or "environment_done"
-            )
-            state["terminal_result"] = {
-                "done": True,
-                "over": result.get("over") is True,
-            }
-            state["final_reward"] = step["reward"]
-            if result.get("over") is not True or not math.isfinite(step["reward"]):
-                _mark_infrastructure_invalid(state, "invalid_terminal_result")
-            else:
-                reward_detail = result.get("reward_detail")
-                if (
-                    isinstance(reward_detail, dict)
-                    and reward_detail.get("reward_version")
-                    == "shopsimulator-reward-v3"
-                ):
-                    try:
-                        public_detail = validate_reward(reward_detail)
-                        if (
-                            public_detail.get("terminal_utility", step["reward"])
-                            != step["reward"]
-                        ):
-                            raise ValueError(
-                                "terminal_utility differs from terminal reward"
-                            )
-                    except ValueError as exc:
-                        _mark_infrastructure_invalid(
-                            state,
-                            f"invalid_terminal_reward_detail:{exc}",
-                        )
-                    else:
-                        state["reward_version"] = public_detail["reward_version"]
-                        state["reward_type"] = public_detail["reward_type"]
-                        state["reward_valid"] = public_detail["reward_valid"]
-                        state["reward_unverifiable"] = not public_detail["reward_valid"]
-                        state["reward_detail"] = public_detail
-                        state["termination_reason"] = public_detail[
-                            "termination_reason"
-                        ]
-                else:
-                    _mark_infrastructure_invalid(
-                        state,
-                        "invalid_terminal_reward_detail:expected Reward v3",
-                    )
+            _accept_terminal_result(state, result, step["reward"])
             return ToolResponse(text="Environment terminated."), 0.0, step
         state["latest_observation"] = observation
         state["latest_observation_raw"] = observation
         state["_pending_raw_observation"] = observation
         if len(state["steps"]) >= state["max_steps"]:
-            _terminate(state, "max_steps")
+            await terminate_with_reward(state, "max_steps")
             return ToolResponse(text="Error: maximum executed tool steps reached."), 0.0, step
         return ToolResponse(text=observation), 0.0, step
 
@@ -191,6 +145,74 @@ def _mark_infrastructure_invalid(state, reason):
     state["infrastructure_invalid"] = True
     state["termination_reason"] = reason
     state["error"] = reason
+
+
+def _accept_terminal_result(state, result, reward=None):
+    """Validate one authoritative Environment v2.1 / Reward v3 terminal."""
+    terminal_reward = float(result.get("reward", 0.0) if reward is None else reward)
+    state["done"] = True
+    state["terminate"] = True
+    state["error"] = None
+    state["termination_reason"] = str(
+        result.get("termination_reason") or "environment_done"
+    )
+    state["terminal_result"] = {
+        "done": result.get("done") is True,
+        "over": result.get("over") is True,
+    }
+    state["final_reward"] = terminal_reward
+    if (
+        result.get("done") is not True
+        or result.get("over") is not True
+        or not math.isfinite(terminal_reward)
+    ):
+        _mark_infrastructure_invalid(state, "invalid_terminal_result")
+        return
+    reward_detail = result.get("reward_detail")
+    if not (
+        isinstance(reward_detail, dict)
+        and reward_detail.get("reward_version") == "shopsimulator-reward-v3"
+    ):
+        _mark_infrastructure_invalid(
+            state,
+            "invalid_terminal_reward_detail:expected Reward v3",
+        )
+        return
+    try:
+        public_detail = validate_reward(reward_detail)
+        if public_detail.get("terminal_utility", terminal_reward) != terminal_reward:
+            raise ValueError("terminal_utility differs from terminal reward")
+    except ValueError as exc:
+        _mark_infrastructure_invalid(
+            state,
+            f"invalid_terminal_reward_detail:{exc}",
+        )
+        return
+    state["reward_version"] = public_detail["reward_version"]
+    state["reward_type"] = public_detail["reward_type"]
+    state["reward_valid"] = public_detail["reward_valid"]
+    state["reward_unverifiable"] = not public_detail["reward_valid"]
+    state["reward_detail"] = public_detail
+    state["termination_reason"] = public_detail["termination_reason"]
+
+
+async def terminate_with_reward(state, reason):
+    """Turn a policy-side stop into an environment-authored valid terminal."""
+    env = current_environment.get()
+    if env is None:
+        _terminate(state, "missing_environment_for_termination", infrastructure_invalid=True)
+        return None
+    try:
+        result = await asyncio.to_thread(env.terminate, reason)
+        _accept_terminal_result(state, result)
+        return result
+    except Exception as exc:
+        _terminate(
+            state,
+            f"termination_error:{exc.__class__.__name__}:{exc}",
+            infrastructure_invalid=True,
+        )
+        return None
 
 
 def _terminate(state, reason, *, infrastructure_invalid=False):

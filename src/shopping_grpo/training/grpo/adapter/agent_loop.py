@@ -24,6 +24,7 @@ from shopping_grpo.training.grpo.adapter.runtime import (
     terminal_reward,
 )
 from shopping_grpo.training.grpo.adapter.session import ShopSimulatorSession
+from shopping_grpo.training.grpo.adapter.tools import terminate_with_reward
 
 
 class ShoppingToolAgentLoop(ToolAgentLoop):
@@ -145,16 +146,10 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
             stats = None
         if (
             not self.context_compaction_enable
-            and current_input_tokens
-            > self.context_window_tokens
-            - self.context_generation_reserve_tokens
-            - self.context_safety_margin_tokens
+            and current_input_tokens > self.context_input_budget
         ):
             if runtime_state is not None:
-                runtime_state["terminate"] = True
-                runtime_state["termination_reason"] = "context_hard_limit_exceeded"
-                runtime_state["error"] = runtime_state["termination_reason"]
-                runtime_state["infrastructure_invalid"] = True
+                await terminate_with_reward(runtime_state, "max_steps")
             return AgentState.TERMINATED
         if stats is not None and stats.removed_tokens:
             # routed-experts 的额外状态无法随 token 一起安全裁剪，因此直接判为无效。
@@ -238,9 +233,7 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
         """强制每个 assistant 回合最多执行一个工具调用。"""
         runtime_state = current_runtime_state.get()
         if runtime_state is not None and len(agent_data.tool_calls) > 1:
-            runtime_state["terminate"] = True
-            runtime_state["termination_reason"] = "parallel_tool_calls"
-            runtime_state["error"] = "parallel_tool_calls"
+            await terminate_with_reward(runtime_state, "repeat_loop")
             return AgentState.TERMINATED
         next_state = await super()._handle_processing_tools_state(agent_data)
         runtime_state = current_runtime_state.get()
